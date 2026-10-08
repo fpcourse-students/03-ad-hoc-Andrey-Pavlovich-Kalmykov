@@ -37,16 +37,21 @@ data MonoidDict a = MonoidDict
   }
 
 sumDict :: MonoidDict Int
-sumDict = todo "1.1 sumDict"
+sumDict = MonoidDict{ neutral = 0, combine = (+) }
 
 productDict :: MonoidDict Int
-productDict = todo "1.1 productDict"
+productDict = MonoidDict{ neutral = 1, combine = (*) }
 
 pairDict :: MonoidDict a -> MonoidDict b -> MonoidDict (a, b)
-pairDict = todo "1.1 pairDict"
+pairDict a b = MonoidDict{
+  neutral = (neutral a, neutral b)
+  , combine = \ (la, lb) (ra, rb) -> 
+    (combine a la ra, combine b lb rb)
+  }
 
 foldDict :: MonoidDict a -> [a] -> a
-foldDict = todo "1.1 foldDict"
+foldDict MonoidDict{neutral=n} [] = n
+foldDict d@MonoidDict{combine=c} (x : xs) = x `c` foldDict d xs
 
 
 -- 1.2. Список типов в строку
@@ -65,8 +70,20 @@ foldDict = todo "1.1 foldDict"
 typeName :: forall a. Typeable a => String
 typeName = tyConName $ typeRepTyCon $ typeRep $ Proxy @a
 
-showTypeList :: forall (tys :: [Type]) . String
-showTypeList = todo "1.2"
+class ShowableList (tys :: [Type]) where
+  showType :: String
+  showType' :: String
+
+instance ShowableList '[] where
+  showType = "[]"
+  showType' = ""
+
+instance (ShowableList tys, Typeable ty) => ShowableList (ty : tys) where
+  showType = "[" ++ typeName @ty ++ showType' @tys ++ "]"
+  showType' = "," ++ typeName @ty ++ showType' @tys
+
+showTypeList :: forall (tys :: [Type]) . ShowableList tys => String
+showTypeList = showType @tys
 
 
 -- 1.3. Дефункционализация
@@ -99,23 +116,28 @@ both p q = filterHO (\x -> p x && q x)
 -- Pred обязан оставаться в классах Show и Eq: в отличие от функций, предикаты-данные можно
 -- печатать и сравнивать, и тесты этим пользуются. Равные предикаты — построенные одинаково.
 
-data Pred = PredTodo -- Заглушка: замените своими конструкторами.
+data Pred = PredEven | PredGreater Int | PredBoth Pred Pred
   deriving (Show, Eq)
 
 applyPred :: Pred -> Int -> Bool
-applyPred = todo "1.3 applyPred"
+applyPred p x = case p of
+  PredEven -> even x
+  PredGreater n -> x > n
+  PredBoth p q -> applyPred p x && applyPred q x
 
 filterFO :: Pred -> [Int] -> [Int]
-filterFO = todo "1.3 filterFO"
+filterFO p = \case
+  [] -> []
+  x : xs -> if applyPred p x then x : filterFO p xs else filterFO p xs
 
 isEven :: Pred
-isEven = todo "1.3 isEven"
+isEven = PredEven
 
 isGreater :: Int -> Pred
-isGreater = todo "1.3 isGreater"
+isGreater = PredGreater
 
 isBoth :: Pred -> Pred -> Pred
-isBoth = todo "1.3 isBoth"
+isBoth = PredBoth
 
 
 -- 1.4. Формулы как типы
@@ -138,4 +160,7 @@ type family Interpret (prop :: Prop Type) :: Type where
   Interpret (p :-> q) = Interpret p -> Interpret q
 
 a8Like :: Interpret ((Var a :-> Var c) :/\ (Var b :-> Var c) <-> Var a :\/ Var b :-> Var c)
-a8Like = todo "1.4"
+a8Like = (
+  \(a2c, b2c) -> either a2c b2c
+  , \f -> (f . Left, f . Right)
+  )

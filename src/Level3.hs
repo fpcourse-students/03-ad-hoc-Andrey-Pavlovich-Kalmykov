@@ -23,5 +23,31 @@ import GHC.TypeLits (Symbol)
 -- Тесты подставляют полные окружения (все переменные формулы определены); на них семейство
 -- обязано вычисляться до True или False, иначе тесты не соберутся.
 
+type family Lookup (name :: Symbol) (env :: [(Symbol, Bool)]) :: Bool where
+  Lookup name ('(name, val) ': rest) = val
+  Lookup name ('(other, val) ': rest) = Lookup name rest
+
+type family Not' (b :: Bool) :: Bool where
+  Not' 'True  = 'False
+  Not' 'False = 'True
+
+type family And (a :: Bool) (b :: Bool) :: Bool where
+  And 'True 'True = 'True
+  And _     _     = 'False
+
+type family Or (a :: Bool) (b :: Bool) :: Bool where
+  Or 'False 'False = 'False
+  Or _      _      = 'True
+
+type family Impl (a :: Bool) (b :: Bool) :: Bool where
+  Impl 'True 'False = 'False
+  Impl _     _      = 'True
+
+
 type family Eval (env :: [(Symbol, Bool)]) (p :: Prop Symbol) :: Bool where
-  Eval env p = False -- Заглушка: замените уравнениями.
+  Eval env (Var x)    = Lookup x env
+  Eval env (Not p)    = Not' (Eval env p)
+  Eval env (p :/\ q)  = And (Eval env p) (Eval env q)
+  Eval env (p :\/ q)  = Or (Eval env p) (Eval env q)
+  Eval env (p :-> q)  = Impl (Eval env p) (Eval env q)
+

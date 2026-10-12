@@ -4,12 +4,18 @@
 {-# LANGUAGE UndecidableInstances #-}
 module Level2 where
 
+import Control.Monad (join)
 import Control.Monad.State (State)
+import Control.Monad.State qualified as State
 import Data.Dynamic (Dynamic)
+import Data.Dynamic qualified as Dynamic
 import Data.Hashable (Hashable)
+import Data.Hashable qualified as Hashable
 import Data.Kind (Type)
 import Data.List qualified as List
 import Data.Map (Map)
+import Data.Map qualified as Map
+import Data.Monoid (getSum, Sum(..))
 import Data.Typeable (Typeable)
 import Defs
 import MetaUtils (todo)
@@ -33,10 +39,17 @@ data HSum (tys :: [Type]) where
   There :: HSum tys -> HSum (ty ': tys)
 
 hfoldMap :: Monoid m => (HSum tys -> m) -> HList tys -> m
-hfoldMap = todo "2.1 hfoldMap"
+hfoldMap f = \case
+  HNil -> mempty
+  HCons el xs -> f (Here el) <> (hfoldMap (f . There) xs)
 
 sumParticular :: HList '[Maybe Int, Int] -> Int
-sumParticular = todo "2.1 sumParticular"
+sumParticular = getSum . (hfoldMap help) where
+  help :: HSum '[Maybe Int, Int] -> Sum Int
+  help (Here Nothing) = Sum 0
+  help (Here (Just x)) = Sum x
+  help (There (Here y)) = Sum y
+  help (There (There s)) = case s of {}
 
 
 -- 2.2. Обработчики выбирает компилятор
@@ -52,11 +65,20 @@ sumParticular = todo "2.1 sumParticular"
 class to <-- from where
   transform :: from -> to
 
+instance Sum Int <-- Maybe Int where
+  transform Nothing = Sum 0
+  transform (Just n) = Sum n
+
+instance Sum Int <-- Int where
+  transform = Sum
+
 hfoldMap' :: forall m tys . (Monoid m, All ((<--) m) tys) => HList tys -> m
-hfoldMap' = todo "2.2 hfoldMap'"
+hfoldMap' = \case
+  HNil -> mempty
+  HCons el xs -> transform el <> hfoldMap' xs
 
 sumParticular' :: HList '[Maybe Int, Int] -> Int
-sumParticular' = todo "2.2 sumParticular'"
+sumParticular' = getSum . hfoldMap'
 
 
 -- 2.3. Кеширующий декоратор
@@ -86,24 +108,35 @@ newtype Key ty = Key { getKeyHash :: Int }
 type Cached a = State (Map Int Dynamic) a
 
 newKey :: Hashable a => a -> Key b
-newKey = todo "2.3 newKey"
+newKey = Key . Hashable.hash
 
 runCached :: Cached a -> (a, Map Int Dynamic)
-runCached = todo "2.3 runCached"
+runCached = flip State.runState Map.empty
 
 evalCached :: Cached a -> a
-evalCached = todo "2.3 evalCached"
+evalCached = fst . runCached
 
 getCache :: Typeable ty => Key ty -> Cached (Maybe ty)
-getCache = todo "2.3 getCache"
+getCache Key{ getKeyHash=key } = do
+  map <- State.get
+  return $ join $ Dynamic.fromDynamic <$> Map.lookup key map
 
 storeCache :: Typeable ty => Key ty -> ty -> Cached ()
-storeCache = todo "2.3 storeCache"
+storeCache Key{ getKeyHash=key } val = State.modify $ Map.insert key (Dynamic.toDyn val)
 
 cached
   :: (All Eq tys, All Hashable tys, Typeable res)
   => (HList tys -> res) -> HList tys -> Cached res
-cached = todo "2.3 cached"
+cached f args = do
+  let key = newKey args
+  mb <- getCache key
+  case mb of
+    Just res -> return res
+    Nothing -> do
+      let res = f args
+      storeCache key res
+      return res
+
 
 -- Пример для экспериментов: сумма первых n чисел Фибоначчи считается долго, а повторный
 -- вызов с теми же аргументами берёт ответ из кеша. Время видно в интерпретаторе после
